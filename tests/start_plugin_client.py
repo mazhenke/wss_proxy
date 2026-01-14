@@ -23,6 +23,10 @@ def start_client(remote_host='127.0.0.1', remote_port=8443,
         debug: 启用调试日志
         log_file: 日志文件路径
     """
+    # Convert cert_file to absolute path if provided
+    if cert_file is not None:
+        cert_file = os.path.abspath(cert_file)
+    
     # 设置环境变量
     os.environ['SS_REMOTE_HOST'] = remote_host
     os.environ['SS_REMOTE_PORT'] = str(remote_port)
@@ -46,7 +50,6 @@ def start_client(remote_host='127.0.0.1', remote_port=8443,
     print(f'Remote (WSS Server):    {remote_host}:{remote_port}')
     print(f'Local (SOCKS):          {local_host}:{local_port}')
     if cert_file:
-        cert_file = os.path.abspath(cert_file)
         print(f'Certificate:            {cert_file}')
         print(f'Cert Verification:      Enabled')
     else:

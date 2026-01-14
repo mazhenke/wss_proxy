@@ -13,6 +13,11 @@ import logging
 import pathlib
 from typing import Optional
 
+CFG_MAX_MESSAGE_SIZE = 16 * 1024 * 1024  # 16MB
+CFG_PING_INTERVAL = 30 # ping every 30 seconds
+CFG_PING_TIMEOUT = 10 # timeout if no pong within 10 seconds
+CFG_READ_BUF_SIZE = 8192  # 8KB
+
 # 导入websockets库
 PATH_WEBSOCKETS = pathlib.Path(__file__).parent / "websockets" / "src"
 sys.path.insert(0, str(PATH_WEBSOCKETS))
@@ -84,8 +89,11 @@ class WSSPluginServer:
         setup_logging(debug=debug, log_file=log_file)
         
         # 证书配置
-        self.cert_file = self.plugin_opts.get('cert', 'fullchain.pem')
-        self.key_file = self.plugin_opts.get('key', 'privkey.pem')
+        self.cert_file = self.plugin_opts.get('cert', None)
+        self.key_file = self.plugin_opts.get('key', None)
+        
+        # 判断是否使用SSL（只有在同时提供cert和key时才使用SSL）
+        self.use_ssl = self.cert_file is not None and self.key_file is not None
         
         # WSS配置 - 直接使用 SS 环境变量
         self.wss_host = self.ss_local_host
@@ -176,7 +184,7 @@ class WSSPluginServer:
         try:
             while running['active']:
                 # 从Shadowsocks读取数据
-                data = await reader.read(8192)
+                data = await reader.read(CFG_READ_BUF_SIZE)
                 if not data:
                     logger.debug('Shadowsocks connection closed')
                     break
@@ -236,20 +244,26 @@ class WSSPluginServer:
     
     async def start(self):
         """启动服务端"""
-        logger.info(f'Starting WSS Plugin Server on {self.wss_host}:{self.wss_port}{self.wss_path}')
+        ssl_context = None
+        protocol = 'wss'
         
-        ssl_context = self._create_ssl_context()
+        if self.use_ssl:
+            logger.info(f'Starting WSS Plugin Server on {self.wss_host}:{self.wss_port}{self.wss_path} (SSL enabled)')
+            ssl_context = self._create_ssl_context()
+        else:
+            logger.info(f'Starting WebSocket Plugin Server on {self.wss_host}:{self.wss_port}{self.wss_path} (SSL disabled)')
+            protocol = 'ws'
         
         async with serve(
             self.handle_client,
             self.wss_host,
             self.wss_port,
             ssl=ssl_context,
-            max_size=16 * 1024 * 1024,  # 16MB max message size
-            ping_interval=30,
-            ping_timeout=10
+            max_size=CFG_MAX_MESSAGE_SIZE,
+            ping_interval=CFG_PING_INTERVAL,
+            ping_timeout=CFG_PING_TIMEOUT
         ) as server:
-            logger.info(f'WSS Plugin Server listening on wss://{self.wss_host}:{self.wss_port}{self.wss_path}')
+            logger.info(f'Plugin Server listening on {protocol}://{self.wss_host}:{self.wss_port}{self.wss_path}')
             await asyncio.Future()  # run forever
 
 

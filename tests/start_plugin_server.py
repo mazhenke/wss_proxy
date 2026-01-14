@@ -9,8 +9,8 @@ import os
 import sys
 
 def start_server(backend_host='127.0.0.1', backend_port=8388,
-                listen_host='127.0.0.1', listen_port=8443,
-                cert_file='fullchain.pem', key_file='privkey.pem',
+                listen_host='0.0.0.0', listen_port=8443,
+                cert_file=None, key_file=None,
                 debug=False, log_file=None):
     """
     启动 WSS Plugin 服务端
@@ -25,15 +25,24 @@ def start_server(backend_host='127.0.0.1', backend_port=8388,
         debug: 启用调试日志
         log_file: 日志文件路径
     """
-    cert_file = os.path.abspath(cert_file)
-    key_file =  os.path.abspath(key_file)
+    if cert_file is not None:
+        cert_file = os.path.abspath(cert_file)
     
-    # 构建插件选项
-    plugin_options = f'cert={cert_file};key={key_file}'
+    if key_file is not None:
+        key_file = os.path.abspath(key_file)
+    
+    # 构建插件选项 - 只有在同时提供 cert 和 key 时才添加
+    plugin_options_list = []
+    if cert_file and key_file:
+        plugin_options_list.append(f'cert={cert_file}')
+        plugin_options_list.append(f'key={key_file}')
+    
     if debug:
-        plugin_options += ';debug=true'
+        plugin_options_list.append('debug=true')
     if log_file:
-        plugin_options += f';log_file={os.path.abspath(log_file)}'
+        plugin_options_list.append(f'log_file={os.path.abspath(log_file)}')
+    
+    plugin_options = ';'.join(plugin_options_list)
     
     # 设置环境变量
     os.environ['SS_REMOTE_HOST'] = backend_host
@@ -46,9 +55,13 @@ def start_server(backend_host='127.0.0.1', backend_port=8388,
     print('WSS Plugin Server Configuration')
     print('='*60)
     print(f'Backend (Shadowsocks):  {backend_host}:{backend_port}')
-    print(f'Listen (WSS):           {listen_host}:{listen_port}')
-    print(f'Certificate:            {cert_file}')
-    print(f'Private Key:            {key_file}')
+    print(f'Listen (WebSocket):     {listen_host}:{listen_port}')
+    if cert_file and key_file:
+        print(f'Certificate:            {cert_file}')
+        print(f'Private Key:            {key_file}')
+        print(f'SSL Mode:               Enabled (WSS)')
+    else:
+        print(f'SSL Mode:               Disabled (WS)')
     print('='*60)
     print()
     
@@ -90,13 +103,13 @@ def main():
                        help='Shadowsocks backend host (default: 127.0.0.1)')
     parser.add_argument('--backend-port', type=int, default=8388,
                        help='Shadowsocks backend port (default: 8388)')
-    parser.add_argument('--listen-host', default='127.0.0.1',
-                       help='Listen host (default: 127.0.0.1)')
+    parser.add_argument('--listen-host', default='0.0.0.0',
+                       help='Listen host (default: 0.0.0.0)')
     parser.add_argument('--listen-port', type=int, default=8443,
                        help='Listen port (default: 8443)')
-    parser.add_argument('--cert', default='fullchain.pem',
+    parser.add_argument('--cert', default=None,
                        help='SSL certificate file (default: fullchain.pem)')
-    parser.add_argument('--key', default='privkey.pem',
+    parser.add_argument('--key', default=None,
                        help='SSL private key file (default: privkey.pem)')
     parser.add_argument('--debug', action='store_true',
                        help='Enable debug logging')

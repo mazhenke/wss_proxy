@@ -239,23 +239,31 @@ def main():
                 help='Filter by port (src or dst). If omitted, capture all ports.')
     parser.add_argument('--protocol', choices=['tcp', 'udp', 'both'], default='both',
                         help='Protocol filter (default: both)')
-    parser.add_argument('--verbose', '-v', action='store_true',
-                        help='Show detailed hex dump (payload by default)')
-    parser.add_argument('--dump-full-frame', action='store_true',
-                        help='When verbose, dump entire frame instead of payload only')
+    parser.add_argument('--verbose', '-v', action='store_true', default=True,
+                        help='Show detailed hex dump [default: enabled]')
+    parser.add_argument('--dump-full-frame', action='store_true', default=True,
+                        help='Dump entire frame instead of payload only [default: enabled]')
+    parser.add_argument('--no-verbose', action='store_true',
+                        help='Disable verbose output')
+    parser.add_argument('--no-full-frame', action='store_true',
+                        help='Show payload only (disable full frame dump)')
     parser.add_argument('--out', default=None,
                         help='Append packet logs to file')
     
     args = parser.parse_args()
+    
+    # Handle --no-verbose and --no-full-frame flags (override defaults)
+    verbose = not args.no_verbose if args.no_verbose else args.verbose
+    dump_full_frame = not args.no_full_frame if args.no_full_frame else args.dump_full_frame
     
     try:
         sniffer = PacketSniffer(
             listen_port=args.port,
             listen_host='0.0.0.0',
             protocol=args.protocol,
-            verbose=args.verbose,
+            verbose=verbose,
             out_file=args.out,
-            dump_full_frame=args.dump_full_frame
+            dump_full_frame=dump_full_frame
         )
         sniffer.run()
     

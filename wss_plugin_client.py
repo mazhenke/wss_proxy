@@ -23,7 +23,6 @@ from websockets.asyncio.client import connect as ws_connect
 # 导入加扰模块
 from obfuscator import DataObfuscator
 
-
 def setup_logging(debug=False, log_file=None):
     """配置日志系统"""
     log_level = logging.DEBUG if debug else logging.INFO
@@ -88,6 +87,9 @@ class WSSPluginClient:
         # 证书配置（可选）
         self.cert_file = self.plugin_opts.get('cert', None)
         
+        # 判断是否使用SSL - 根据是否提供了证书
+        self.use_ssl = self.cert_file is not None
+        
         # WSS配置 - 直接使用 SS 环境变量
         self.wss_host = self.ss_remote_host
         self.wss_port = self.ss_remote_port
@@ -96,12 +98,9 @@ class WSSPluginClient:
         # 数据加扰器 - 使用固定密钥
         self.obfuscator = DataObfuscator('wss_plugin_default_key')
         
-        # 连接状态
-        self.websocket = None
-        self.running = False
-        
+        protocol = 'wss' if self.use_ssl else 'ws'
         logger.info(f'Client initialized: local={self.ss_local_host}:{self.ss_local_port}, '
-                   f'remote={self.wss_host}:{self.wss_port}')
+                   f'remote={protocol}://{self.wss_host}:{self.wss_port}')
     
     def _parse_plugin_opts(self, opts_str: str) -> dict:
         """解析插件选项字符串"""
@@ -131,10 +130,11 @@ class WSSPluginClient:
         
         return ssl_context
     
-    async def connect_websocket(self) -> bool:
-        """连接到WSS服务器"""
-        uri = f"wss://{self.wss_host}:{self.wss_port}{self.wss_path}"
-        ssl_context = self._create_ssl_context()
+    async def connect_websocket(self):
+        """连接到WSS/WS服务器，返回websocket连接"""
+        protocol = 'wss' if self.use_ssl else 'ws'
+        uri = f"{protocol}://{self.wss_host}:{self.wss_port}{self.wss_path}"
+        ssl_context = self._create_ssl_context() if self.use_ssl else None
         
         # 浏览器 User-Agent
         additional_headers = [
@@ -143,7 +143,7 @@ class WSSPluginClient:
         
         try:
             logger.info(f'Connecting to {uri}...')
-            self.websocket = await ws_connect(
+            websocket = await ws_connect(
                 uri,
                 ssl=ssl_context,
                 additional_headers=additional_headers,
@@ -152,15 +152,15 @@ class WSSPluginClient:
                 ping_timeout=10
             )
             logger.info('WebSocket connected successfully')
-            return True
+            return websocket
         except Exception as e:
             logger.error(f'Failed to connect to WebSocket: {e}')
-            return False
+            return None
     
-    async def handle_local_to_remote(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    async def handle_local_to_remote(self, websocket, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, running: dict):
         """处理从本地到远程的数据流"""
         try:
-            while self.running:
+            while running['active']:
                 # 从本地Shadowsocks读取数据
                 data = await reader.read(8192)
                 if not data:
@@ -171,21 +171,22 @@ class WSSPluginClient:
                 obfuscated_data = self.obfuscator.obfuscate(data)
                 
                 # 发送到WSS服务器
-                await self.websocket.send(obfuscated_data)
+                await websocket.send(obfuscated_data)
                 logger.debug(f'Sent {len(data)} bytes (obfuscated to {len(obfuscated_data)} bytes)')
                 
         except Exception as e:
             logger.error(f'Error in local_to_remote: {e}')
         finally:
+            running['active'] = False
             writer.close()
             await writer.wait_closed()
     
-    async def handle_remote_to_local(self, writer: asyncio.StreamWriter):
+    async def handle_remote_to_local(self, websocket, writer: asyncio.StreamWriter, running: dict):
         """处理从远程到本地的数据流"""
         try:
-            while self.running:
+            while running['active']:
                 # 从WSS服务器接收数据
-                obfuscated_data = await self.websocket.recv()
+                obfuscated_data = await websocket.recv()
                 
                 # 数据去加扰
                 data = self.obfuscator.deobfuscate(obfuscated_data)
@@ -198,6 +199,7 @@ class WSSPluginClient:
         except Exception as e:
             logger.error(f'Error in remote_to_local: {e}')
         finally:
+            running['active'] = False
             writer.close()
             await writer.wait_closed()
     
@@ -206,19 +208,21 @@ class WSSPluginClient:
         client_addr = writer.get_extra_info('peername')
         logger.info(f'New client connection from {client_addr}')
         
+        websocket = None
         try:
-            # 连接到WSS服务器
-            if not await self.connect_websocket():
+            # 连接到WSS服务器（每个客户端独立连接）
+            websocket = await self.connect_websocket()
+            if not websocket:
                 logger.error('Failed to establish WebSocket connection')
                 writer.close()
                 await writer.wait_closed()
                 return
             
-            # 双向转发数据
-            self.running = True
+            # 双向转发数据（使用独立的running状态）
+            running = {'active': True}
             
-            local_to_remote = asyncio.create_task(self.handle_local_to_remote(reader, writer))
-            remote_to_local = asyncio.create_task(self.handle_remote_to_local(writer))
+            local_to_remote = asyncio.create_task(self.handle_local_to_remote(websocket, reader, writer, running))
+            remote_to_local = asyncio.create_task(self.handle_remote_to_local(websocket, writer, running))
             
             # 等待任一方向关闭
             done, pending = await asyncio.wait(
@@ -237,9 +241,8 @@ class WSSPluginClient:
         except Exception as e:
             logger.error(f'Error handling client: {e}')
         finally:
-            self.running = False
-            if self.websocket:
-                await self.websocket.close()
+            if websocket:
+                await websocket.close()
             logger.info(f'Client connection closed {client_addr}')
     
     async def start(self):
