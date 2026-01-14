@@ -1,33 +1,21 @@
-#!/bin/bash
-# WSS Plugin Tests - 快速开始
+# WSS Plugin - Tests 目录
 
-echo "WSS Plugin 测试工具"
-echo "=================="
-echo ""
-echo "测试文件列表："
-echo ""
-echo "1️⃣  generate_cert.py           - 生成 SSL 证书"
-echo "2️⃣  start_echo_server.py       - 启动 Echo 服务器（后端）"
-echo "3️⃣  start_plugin_server.py     - 启动 WSS 插件服务端"
-echo "4️⃣  start_plugin_client.py     - 启动 WSS 插件客户端"
-echo "5️⃣  test_data_transfer.py      - 测试数据传输"
-echo ""
-echo "文档："
-echo "📖 TESTING_TOOLS.md           - 工具使用详细指南"
-echo "📖 TEST_GUIDE.md              - 测试指南"
-echo ""
-echo "================================================================================"
-echo "快速开始："
-echo "================================================================================"
-echo ""
-echo "方式: 手动测试（分步）"
-echo "  终端 1: python3 generate_cert.py      # 生成证书（首次）"
-echo "  终端 1: python3 start_echo_server.py  # 启动 Echo 服务器"
-echo "  终端 2: python3 start_plugin_server.py"
-echo "  终端 3: python3 start_plugin_client.py"
-echo "  终端 4: python3 test_data_transfer.py --verbose"
-echo ""
-echo "================================================================================"
-echo "了解更多信息:"
-echo "  $ cat TESTING_TOOLS.md"
-echo ""
+## 可用脚本
+
+- generate_cert.py — 生成自签名证书（默认 fullchain.pem / privkey.pem）。
+- start_echo_server.py — 简单 TCP Echo（默认 127.0.0.1:8388）。
+- start_plugin_server.py — 设置 SIP003 环境变量后启动 WSS 服务端（默认监听 127.0.0.1:8443）。
+- start_plugin_client.py — 启动 WSS 客户端并监听本地 SOCKS 端口（默认 127.0.0.1:1080）。
+- test_data_transfer.py — 直连 SOCKS 端口做回显验证。
+
+文档：TESTING_TOOLS.md（参数说明）、TEST_GUIDE.md（步骤示例）。
+
+## 最短路径测试（4 终端）
+
+1. `./generate_cert.py --domain localhost`
+2. `./start_echo_server.py --host 127.0.0.1 --port 8388`
+3. `./start_plugin_server.py --backend-host 127.0.0.1 --backend-port 8388 --listen-host 127.0.0.1 --listen-port 8443 --cert fullchain.pem --key privkey.pem`
+4. `./start_plugin_client.py --remote-host 127.0.0.1 --remote-port 8443 --local-port 1080`
+5. 另开终端：`./test_data_transfer.py --verbose`
+
+说明：客户端证书校验被禁用；若端口冲突，可用脚本参数调整 8388/8443/1080。

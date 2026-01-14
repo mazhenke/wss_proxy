@@ -204,11 +204,11 @@ Private Key:            privkey.pem
 - `--remote-port` - WSS服务器端口（默认: 8443）
 - `--local-host` - 本地监听地址（默认: 127.0.0.1）
 - `--local-port` - 本地监听端口（默认: 1080）
-- `--cert` - SSL证书文件（可选，用于验证服务器）
+- `--cert` - SSL证书文件（可选；当前客户端仍禁用验证，仅记录日志）
 
 **示例：**
 ```bash
-# 基本使用（跳过证书验证）
+# 基本使用（客户端始终跳过证书验证）
 ./start_plugin_client.py
 
 # 连接远程服务器
@@ -216,9 +216,6 @@ Private Key:            privkey.pem
   --remote-host server.example.com \
   --remote-port 443 \
   --local-port 1080
-
-# 启用证书验证
-./start_plugin_client.py --cert fullchain.pem
 ```
 
 **输出示例：**
@@ -292,75 +289,17 @@ Test Results: 8 passed, 0 failed
 ✓ ALL TESTS PASSED!
 ```
 
-## 完整测试流程
+## 快速串行流程（无后台）
 
-### 一键测试脚本
-
-创建 `run_full_test.sh`:
+在单终端串行验证：
 
 ```bash
-#!/bin/bash
-
-echo "WSS Plugin Full Test Suite"
-echo "=========================="
-echo ""
-
-# 1. 生成证书
-echo "Step 1: Generate certificate..."
-./generate_cert.py
-if [ $? -ne 0 ]; then
-    echo "Failed to generate certificate"
-    exit 1
-fi
-echo ""
-
-# 2. 启动 Echo 服务器（后台）
-echo "Step 2: Starting Echo server..."
-./start_echo_server.py &
-ECHO_PID=$!
-sleep 2
-echo ""
-
-# 3. 启动 WSS 服务端（后台）
-echo "Step 3: Starting WSS Plugin Server..."
-./start_plugin_server.py &
-SERVER_PID=$!
-sleep 3
-echo ""
-
-# 4. 启动 WSS 客户端（后台）
-echo "Step 4: Starting WSS Plugin Client..."
-./start_plugin_client.py &
-CLIENT_PID=$!
-sleep 3
-echo ""
-
-# 5. 运行测试
-echo "Step 5: Running tests..."
+./generate_cert.py --domain localhost
+./start_echo_server.py --host 127.0.0.1 --port 8388 &
+./start_plugin_server.py --backend-host 127.0.0.1 --backend-port 8388 --listen-host 127.0.0.1 --listen-port 8443 --cert fullchain.pem --key privkey.pem &
+./start_plugin_client.py --remote-host 127.0.0.1 --remote-port 8443 --local-port 1080 &
 ./test_data_transfer.py --verbose
-TEST_RESULT=$?
-echo ""
-
-# 6. 清理
-echo "Step 6: Cleanup..."
-kill $CLIENT_PID $SERVER_PID $ECHO_PID 2>/dev/null
-wait 2>/dev/null
-
-if [ $TEST_RESULT -eq 0 ]; then
-    echo ""
-    echo "✓ All tests completed successfully!"
-    exit 0
-else
-    echo ""
-    echo "✗ Tests failed!"
-    exit 1
-fi
-```
-
-使用：
-```bash
-chmod +x run_full_test.sh
-./run_full_test.sh
+pkill -f "start_echo_server.py|start_plugin_server.py|start_plugin_client.py"
 ```
 
 ## 故障排查
@@ -427,6 +366,5 @@ chmod +x run_full_test.sh
 
 ## 更多信息
 
-- 原始测试脚本: `test_plugin.py`（自动化测试）
 - 详细文档: `使用说明.md`
 - 测试指南: `TEST_GUIDE.md`
