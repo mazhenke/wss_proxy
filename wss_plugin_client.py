@@ -14,6 +14,9 @@ import struct
 import pathlib
 from typing import Optional
 
+# 配置常量
+CFG_PRE_CONNECTION = True  # True: per-connection mode (for ss-libev), False: daemon mode (standalone)
+
 # 导入websockets库
 PATH_WEBSOCKETS = pathlib.Path(__file__).parent / "websockets" / "src"
 sys.path.insert(0, str(PATH_WEBSOCKETS))
@@ -263,15 +266,81 @@ class WSSPluginClient:
 
 
 async def main():
-    """主函数"""
+    """主函数 - 支持 per-connection 和 daemon 两种模式"""
     try:
         client = WSSPluginClient()
-        await client.start()
+        
+        if CFG_PRE_CONNECTION:
+            # Per-connection mode：处理单个连接后退出
+            logger.info('Running in per-connection mode')
+            await main_per_connection(client)
+        else:
+            # Daemon mode：持续监听多个连接
+            logger.info('Running in daemon mode')
+            await client.start()
+            
     except KeyboardInterrupt:
         logger.info('Received interrupt signal, shutting down...')
     except Exception as e:
         logger.error(f'Fatal error: {e}', exc_info=True)
         sys.exit(1)
+
+
+async def main_per_connection(client):
+    """Per-connection mode - 处理单个连接，通常由 ss-libev 为每个客户端连接调用一次"""
+    try:
+        # 连接到本地 Shadowsocks（ss-libev 为该连接提供）
+        logger.debug(f'Connecting to local Shadowsocks at {client.ss_local_host}:{client.ss_local_port}')
+        ss_reader, ss_writer = await asyncio.open_connection(
+            client.ss_local_host,
+            client.ss_local_port
+        )
+        logger.debug(f'Connected to local Shadowsocks')
+        
+        # 连接到远程 WSS/WS 服务器
+        websocket = await client.connect_websocket()
+        if not websocket:
+            logger.error('Failed to connect to WebSocket server')
+            ss_writer.close()
+            await ss_writer.wait_closed()
+            return
+        
+        logger.info(f'Per-connection bridge established: local<->remote')
+        
+        # 双向转发数据（此单个连接）
+        running = {'active': True}
+        
+        local_to_remote = asyncio.create_task(
+            client.handle_local_to_remote(websocket, ss_reader, ss_writer, running)
+        )
+        remote_to_local = asyncio.create_task(
+            client.handle_remote_to_local(websocket, ss_writer, running)
+        )
+        
+        # 等待任一方向关闭
+        done, pending = await asyncio.wait(
+            [local_to_remote, remote_to_local],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        
+        # 取消未完成的任务
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        
+        logger.info('Per-connection bridge closed')
+        
+    except Exception as e:
+        logger.error(f'Error in per-connection mode: {e}', exc_info=True)
+    finally:
+        if 'websocket' in locals() and websocket:
+            await websocket.close()
+        if 'ss_writer' in locals():
+            ss_writer.close()
+            await ss_writer.wait_closed()
 
 
 if __name__ == '__main__':

@@ -13,10 +13,12 @@ import logging
 import pathlib
 from typing import Optional
 
+# 配置常量
 CFG_MAX_MESSAGE_SIZE = 16 * 1024 * 1024  # 16MB
 CFG_PING_INTERVAL = 30 # ping every 30 seconds
 CFG_PING_TIMEOUT = 10 # timeout if no pong within 10 seconds
 CFG_READ_BUF_SIZE = 8192  # 8KB
+CFG_PRE_CONNECTION = True  # True: per-connection mode (for ss-libev), False: daemon mode (standalone)
 
 # 导入websockets库
 PATH_WEBSOCKETS = pathlib.Path(__file__).parent / "websockets" / "src"
@@ -273,15 +275,65 @@ class WSSPluginServer:
 
 
 async def main():
-    """主函数"""
+    """主函数 - 支持 per-connection 和 daemon 两种模式"""
     try:
         server = WSSPluginServer()
-        await server.start()
+        
+        if CFG_PRE_CONNECTION:
+            # Per-connection mode：处理单个客户端连接后退出
+            logger.info('Running in per-connection mode')
+            await main_per_connection(server)
+        else:
+            # Daemon mode：持续监听多个客户端连接
+            logger.info('Running in daemon mode')
+            await server.start()
+            
     except KeyboardInterrupt:
         logger.info('Received interrupt signal, shutting down...')
     except Exception as e:
         logger.error(f'Fatal error: {e}', exc_info=True)
         sys.exit(1)
+
+
+async def main_per_connection(server):
+    """Per-connection mode - 处理单个 WebSocket 客户端连接，通常由 ss-libev 为每个用户连接调用一次"""
+    try:
+        # 在 per-connection mode 下，ss-libev 创建一个 WebSocket 连接并传给我们
+        # 我们需要接受 WebSocket 连接并转发数据
+        
+        ssl_context = None
+        protocol = 'wss'
+        
+        if server.use_ssl:
+            logger.info(f'Per-connection WSS mode (SSL enabled)')
+            ssl_context = server._create_ssl_context()
+        else:
+            logger.info(f'Per-connection WebSocket mode (SSL disabled)')
+            protocol = 'ws'
+        
+        # 监听一个连接（使用 serve 但立即接受一个连接后就处理）
+        async def handle_one_connection(websocket):
+            logger.info(f'Per-connection: Handling WebSocket client from {websocket.remote_address}')
+            await server.handle_client(websocket)
+        
+        # 创建服务器以接受单个连接
+        async with serve(
+            handle_one_connection,
+            server.wss_host,
+            server.wss_port,
+            ssl=ssl_context,
+            max_size=CFG_MAX_MESSAGE_SIZE,
+            ping_interval=CFG_PING_INTERVAL,
+            ping_timeout=CFG_PING_TIMEOUT
+        ) as ws_server:
+            logger.info(f'Per-connection server listening on {protocol}://{server.wss_host}:{server.wss_port}{server.wss_path}')
+            
+            # 在 per-connection mode 下，我们通常只处理一个连接
+            # 但保持服务器运行，让 ss-libev 控制生命周期
+            await asyncio.Future()  # run forever
+            
+    except Exception as e:
+        logger.error(f'Error in per-connection mode: {e}', exc_info=True)
 
 
 if __name__ == '__main__':
