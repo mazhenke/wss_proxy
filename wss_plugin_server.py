@@ -95,16 +95,21 @@ class WSSPluginServer:
         # 判断是否使用SSL（只有在同时提供cert和key时才使用SSL）
         self.use_ssl = self.cert_file is not None and self.key_file is not None
         
-        # WSS配置 - 直接使用 SS 环境变量
-        self.wss_host = self.ss_local_host
-        self.wss_port = self.ss_local_port
+        # WSS配置 - 在服务端模式下，LOCAL 是 ss-server 监听的内部地址，REMOTE 是插件对外暴露的地址
+        # 所以插件应该监听 REMOTE，连接到 LOCAL
+        self.wss_host = self.ss_remote_host  # 插件对外监听地址
+        self.wss_port = self.ss_remote_port  # 插件对外监听端口
         self.wss_path = '/ws'
+        
+        # Shadowsocks 后端地址（插件连接的目标）
+        self.backend_host = self.ss_local_host  # SS 内部监听地址
+        self.backend_port = self.ss_local_port  # SS 内部监听端口
         
         # 数据加扰器 - 使用固定密钥
         self.obfuscator = DataObfuscator('wss_plugin_default_key')
         
         logger.info(f'Server initialized: listen={self.wss_host}:{self.wss_port}, '
-                   f'backend={self.ss_remote_host}:{self.ss_remote_port}')
+                   f'backend={self.backend_host}:{self.backend_port}')
     
     def _parse_plugin_opts(self, opts_str: str) -> dict:
         """解析插件选项字符串"""
@@ -148,10 +153,10 @@ class WSSPluginServer:
         """连接到后端Shadowsocks服务器"""
         try:
             reader, writer = await asyncio.open_connection(
-                self.ss_remote_host,
-                self.ss_remote_port
+                self.backend_host,
+                self.backend_port
             )
-            logger.debug(f'Connected to Shadowsocks backend at {self.ss_remote_host}:{self.ss_remote_port}')
+            logger.debug(f'Connected to Shadowsocks backend at {self.backend_host}:{self.backend_port}')
             return reader, writer
         except Exception as e:
             logger.error(f'Failed to connect to Shadowsocks backend: {e}')

@@ -45,10 +45,11 @@ def start_server(backend_host='127.0.0.1', backend_port=8388,
     plugin_options = ';'.join(plugin_options_list)
     
     # 设置环境变量
-    os.environ['SS_REMOTE_HOST'] = backend_host
-    os.environ['SS_REMOTE_PORT'] = str(backend_port)
-    os.environ['SS_LOCAL_HOST'] = listen_host
-    os.environ['SS_LOCAL_PORT'] = str(listen_port)
+    # 注意：在 SIP003 服务端插件中，SS_REMOTE 是插件对外监听地址，SS_LOCAL 是 SS 后端地址
+    os.environ['SS_REMOTE_HOST'] = listen_host
+    os.environ['SS_REMOTE_PORT'] = str(listen_port)
+    os.environ['SS_LOCAL_HOST'] = backend_host
+    os.environ['SS_LOCAL_PORT'] = str(backend_port)
     os.environ['SS_PLUGIN_OPTIONS'] = plugin_options
     
     print('='*60)
