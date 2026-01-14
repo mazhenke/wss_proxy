@@ -24,11 +24,45 @@ from websockets.asyncio.client import connect as ws_connect
 from obfuscator import DataObfuscator
 
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+def setup_logging(debug=False, log_file=None):
+    """配置日志系统"""
+    log_level = logging.DEBUG if debug else logging.INFO
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    
+    handlers = []
+    
+    # 控制台输出
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(log_format))
+    handlers.append(console_handler)
+    
+    # 文件输出（如果指定）
+    if log_file:
+        file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+        file_handler.setFormatter(logging.Formatter(log_format))
+        handlers.append(file_handler)
+    
+    # 配置根日志
+    logging.basicConfig(
+        level=log_level,
+        format=log_format,
+        handlers=handlers,
+        force=True
+    )
+    
+    # 配置 SSL、websockets 和插件日志
+    if debug:
+        logging.getLogger('ssl').setLevel(logging.DEBUG)
+        logging.getLogger('websockets').setLevel(logging.DEBUG)
+        logging.getLogger('wss-plugin-server').setLevel(logging.DEBUG)
+        logging.getLogger('wss-plugin-client').setLevel(logging.DEBUG)
+    else:
+        logging.getLogger('ssl').setLevel(logging.INFO)
+        logging.getLogger('websockets').setLevel(logging.INFO)
+        logging.getLogger('wss-plugin-server').setLevel(logging.INFO)
+        logging.getLogger('wss-plugin-client').setLevel(logging.INFO)
+
+
 logger = logging.getLogger('wss-plugin-client')
 
 
@@ -43,8 +77,13 @@ class WSSPluginClient:
         self.ss_local_host = os.environ.get('SS_LOCAL_HOST', '127.0.0.1')
         self.ss_local_port = int(os.environ.get('SS_LOCAL_PORT', '1080'))
         
-        # 插件选项 - 仅支持证书配置
+        # 插件选项
         self.plugin_opts = self._parse_plugin_opts(os.environ.get('SS_PLUGIN_OPTIONS', ''))
+        
+        # 配置日志（从插件选项读取）
+        debug = self.plugin_opts.get('debug', 'false').lower() in ('true', '1', 'yes')
+        log_file = self.plugin_opts.get('log_file', None)
+        setup_logging(debug=debug, log_file=log_file)
         
         # 证书配置（可选）
         self.cert_file = self.plugin_opts.get('cert', None)

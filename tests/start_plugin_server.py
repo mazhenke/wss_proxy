@@ -10,7 +10,8 @@ import sys
 
 def start_server(backend_host='127.0.0.1', backend_port=8388,
                 listen_host='127.0.0.1', listen_port=8443,
-                cert_file='fullchain.pem', key_file='privkey.pem'):
+                cert_file='fullchain.pem', key_file='privkey.pem',
+                debug=False, log_file=None):
     """
     启动 WSS Plugin 服务端
     
@@ -21,15 +22,25 @@ def start_server(backend_host='127.0.0.1', backend_port=8388,
         listen_port: 监听端口
         cert_file: SSL 证书文件
         key_file: SSL 私钥文件
+        debug: 启用调试日志
+        log_file: 日志文件路径
     """
     cert_file = os.path.abspath(cert_file)
     key_file =  os.path.abspath(key_file)
+    
+    # 构建插件选项
+    plugin_options = f'cert={cert_file};key={key_file}'
+    if debug:
+        plugin_options += ';debug=true'
+    if log_file:
+        plugin_options += f';log_file={os.path.abspath(log_file)}'
+    
     # 设置环境变量
     os.environ['SS_REMOTE_HOST'] = backend_host
     os.environ['SS_REMOTE_PORT'] = str(backend_port)
     os.environ['SS_LOCAL_HOST'] = listen_host
     os.environ['SS_LOCAL_PORT'] = str(listen_port)
-    os.environ['SS_PLUGIN_OPTIONS'] = f'cert={cert_file};key={key_file}'
+    os.environ['SS_PLUGIN_OPTIONS'] = plugin_options
     
     print('='*60)
     print('WSS Plugin Server Configuration')
@@ -87,6 +98,10 @@ def main():
                        help='SSL certificate file (default: fullchain.pem)')
     parser.add_argument('--key', default='privkey.pem',
                        help='SSL private key file (default: privkey.pem)')
+    parser.add_argument('--debug', action='store_true',
+                       help='Enable debug logging')
+    parser.add_argument('--log-file', default=None,
+                       help='Log file path (optional)')
     
     args = parser.parse_args()
     
@@ -96,7 +111,9 @@ def main():
         args.listen_host,
         args.listen_port,
         args.cert,
-        args.key
+        args.key,
+        args.debug,
+        args.log_file
     )
 
 

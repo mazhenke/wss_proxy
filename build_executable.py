@@ -180,6 +180,7 @@ Requirements:
     # 默认构建客户端
     if not (args.client or args.server or args.all):
         args.client = True
+        args.server = True
     
     builder = ExecutableBuilder(output_dir=args.output)
     

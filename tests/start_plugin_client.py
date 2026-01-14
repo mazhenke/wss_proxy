@@ -10,7 +10,7 @@ import sys
 
 def start_client(remote_host='127.0.0.1', remote_port=8443,
                 local_host='127.0.0.1', local_port=1080,
-                cert_file=None):
+                cert_file=None, debug=False, log_file=None):
     """
     启动 WSS Plugin 客户端
     
@@ -20,6 +20,8 @@ def start_client(remote_host='127.0.0.1', remote_port=8443,
         local_host: 本地监听地址
         local_port: 本地监听端口
         cert_file: SSL 证书文件（可选，用于验证服务器证书）
+        debug: 启用调试日志
+        log_file: 日志文件路径
     """
     # 设置环境变量
     os.environ['SS_REMOTE_HOST'] = remote_host
@@ -27,10 +29,16 @@ def start_client(remote_host='127.0.0.1', remote_port=8443,
     os.environ['SS_LOCAL_HOST'] = local_host
     os.environ['SS_LOCAL_PORT'] = str(local_port)
     
+    # 构建插件选项
+    plugin_options = []
     if cert_file:
-        os.environ['SS_PLUGIN_OPTIONS'] = f'cert={cert_file}'
-    else:
-        os.environ['SS_PLUGIN_OPTIONS'] = ''
+        plugin_options.append(f'cert={cert_file}')
+    if debug:
+        plugin_options.append('debug=true')
+    if log_file:
+        plugin_options.append(f'log_file={os.path.abspath(log_file)}')
+    
+    os.environ['SS_PLUGIN_OPTIONS'] = ';'.join(plugin_options)
     
     print('='*60)
     print('WSS Plugin Client Configuration')
@@ -91,6 +99,10 @@ def main():
                        help='Local listen port (default: 1080)')
     parser.add_argument('--cert', default=None,
                        help='SSL certificate file for verification (optional)')
+    parser.add_argument('--debug', action='store_true',
+                       help='Enable debug logging')
+    parser.add_argument('--log-file', default=None,
+                       help='Log file path (optional)')
     
     args = parser.parse_args()
     
@@ -99,7 +111,9 @@ def main():
         args.remote_port,
         args.local_host,
         args.local_port,
-        args.cert
+        args.cert,
+        args.debug,
+        args.log_file
     )
 
 
